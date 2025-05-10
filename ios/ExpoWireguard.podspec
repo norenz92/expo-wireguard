@@ -24,8 +24,18 @@ Pod::Spec.new do |s|
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
     'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule'
+    'SWIFT_COMPILATION_MODE' => 'wholemodule',
+    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/Frameworks/Wireguard.xcframework/ios-arm64/Headers" "$(PODS_TARGET_SRCROOT)/Frameworks/Wireguard.xcframework/ios-arm64-simulator/Headers"',
+    # Disable the module map to prevent redefinition errors
+    'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
+    'MODULEMAP_FILE' => ''
   }
+
+  # The following script runs during installation to handle module map conflicts
+  s.prepare_command = <<-CMD
+    # Rename or remove conflicting module maps to prevent redefinition errors
+    find ./Frameworks/Wireguard.xcframework -name "module.modulemap" -exec rm {} \\;
+  CMD
 
   s.source_files = 'src/**/*.{h,m,mm,swift,hpp,cpp}'
 end

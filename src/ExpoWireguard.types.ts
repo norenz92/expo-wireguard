@@ -1,13 +1,20 @@
-export type OnLoadEventPayload = {
-  url: string;
-};
+// filepath: /Users/adamnoren/hemla/expo-wireguard/src/ExpoWireguard.types.ts
+/**
+ * Configuration for Android notification displayed when VPN is active
+ */
+export interface NotificationConfig {
+  /**
+   * Name of the icon in /res directory (Android only)
+   */
+  icon?: string;
 
-export type ExpoWireguardModuleEvents = {
-  EVT_REGULAR: { event: string };
-  EVT_EXCEPTION: { error: string };
-  EVT_SYSTEM: { event: string };
-};
+  /**
+   * Title of the notification
+   */
+  title: string;
 
-export type ChangeEventPayload = {
-  value: string;
-};
+  /**
+   * Text content of the notification
+   */
+  text: string;
+}

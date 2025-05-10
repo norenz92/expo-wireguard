@@ -14,7 +14,12 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "expo.modules.wireguard.example"
+      "bundleIdentifier": "expo.modules.wireguard.example",
+      "entitlements": {
+        "com.apple.developer.networking.networkextension": [
+          "app-proxy-provider"
+        ]
+      }
     },
     "android": {
       "adaptiveIcon": {
