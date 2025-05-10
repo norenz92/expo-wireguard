@@ -25,6 +25,7 @@ DerivedData
 *.ipa
 *.xcuserstate
 project.xcworkspace
+example/ios/
 
 # Android/IJ
 #
