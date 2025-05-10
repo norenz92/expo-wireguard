@@ -3,7 +3,9 @@ export type OnLoadEventPayload = {
 };
 
 export type ExpoWireguardModuleEvents = {
-  onChange: (params: ChangeEventPayload) => void;
+  EVT_REGULAR: { event: string };
+  EVT_EXCEPTION: { error: string };
+  EVT_SYSTEM: { event: string };
 };
 
 export type ChangeEventPayload = {

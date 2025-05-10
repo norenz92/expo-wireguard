@@ -1,5 +1,2 @@
-import { ExpoWireguardModule } from './ExpoWireguardModule';
-
-export function configure(config: string) {
-  ExpoWireguardModule.configure(config);
-}
+export { default } from './ExpoWireguardModule';
+export * from './ExpoWireguard.types';

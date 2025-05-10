@@ -1,9 +1,12 @@
-import { requireNativeModule, NativeModule } from 'expo';
-import { ExpoWireguardModuleEvents } from './ExpoWireguard.types'
+import { NativeModule, requireNativeModule } from 'expo';
 
-declare class ExpoWireguardModule extends NativeModule<ExpoWireguardModuleEvents> {
-  configure: (config: string) => void;
+declare class ExpoTestModule extends NativeModule {
+  getVersion(): Promise<string>;
+  configure(config: string): Promise<void>;
+  start(): Promise<void>;
+  stop(): Promise<void>;
+  getStatus(): Promise<string>;
 }
 
 // This call loads the native module object
-export default requireNativeModule<ExpoWireguardModule>('ExpoWireguard');
+export default requireNativeModule<ExpoTestModule>('ExpoWireguard');

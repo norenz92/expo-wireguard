@@ -10,11 +10,26 @@ public class ExpoWireguardModule: Module {
     // The module will be accessible from `requireNativeModule('ExpoWireguard')` in JavaScript.
     Name("ExpoWireguard")
 
-    // Function to configue the WireGuard module. Return a string indicating success or failure.
-    Function("configure") { (config: String) -> String in
-      // Here you would implement the logic to configure the WireGuard module with the provided config.
-      // For now, we just return a success message.
-      return "WireGuard configured successfully with config: \(config)"
+    Function("getVersion") { () -> String in
+      // Here you would implement the logic to get the status of the WireGuard module.
+      // For now, we just return a dummy status message.
+      return "WireGuard is running"
+    }
+
+    AsyncFunction("connect") { (config: [String: Any]) -> Void in
+      // Here you would implement the logic to connect to a WireGuard server using the provided configuration.
+      // For now, we just print the configuration to the console.
+      print("Connecting to WireGuard with config: \(config)")
+    }
+    AsyncFunction("disconnect") { () -> Void in
+      // Here you would implement the logic to disconnect from the WireGuard server.
+      // For now, we just print a message to the console.
+      print("Disconnecting from WireGuard")
+    }
+    AsyncFunction("getStatus") { () -> String in
+      // Here you would implement the logic to get the status of the WireGuard connection.
+      // For now, we just return a dummy status message.
+      return "WireGuard is connected"
     }
   }
 }

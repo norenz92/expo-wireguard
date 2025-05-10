@@ -1,13 +1,14 @@
 
 import { Button, Text, View } from 'react-native';
-import { configure } from 'expo-wireguard'
+import WireGuard from 'expo-wireguard'
 
 export default function App() {
 
-  const handleConfigure = () => {
+  const handleConfigure = async () => {
     const config = ``
     // Example configuration
-    configure(config)
+    const status = await WireGuard.getStatus()
+    console.log('Status:', status)
   }
 
   return (

@@ -28,11 +28,13 @@
   "author": "Adam Norén <norenz@hotmail.com> (https://github.com/norenz92)",
   "license": "MIT",
   "homepage": "https://github.com/norenz92/expo-wireguard#readme",
-  "dependencies": {},
+  "dependencies": {
+    "expo-modules-core": "^2.3.13"
+  },
   "devDependencies": {
     "@types/react": "~19.0.0",
-    "expo-module-scripts": "^4.1.6",
     "expo": "~53.0.0",
+    "expo-module-scripts": "^4.1.6",
     "react-native": "0.79.1"
   },
   "peerDependencies": {
