@@ -11,7 +11,7 @@ public class ExpoWireguardModule: Module {
     Name("ExpoWireguard")
 
     // Function to configue the WireGuard module. Return a string indicating success or failure.
-    Function("configure") { (config: [String: Any]) -> String in
+    Function("configure") { (config: String) -> String in
       // Here you would implement the logic to configure the WireGuard module with the provided config.
       // For now, we just return a success message.
       return "WireGuard configured successfully with config: \(config)"

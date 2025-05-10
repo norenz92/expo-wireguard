@@ -19,7 +19,7 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.vendored_frameworks = 'wireguard.xcframework'
+  s.vendored_frameworks = 'modules/wireguard.xcframework'
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = {
