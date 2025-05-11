@@ -1,31 +1,26 @@
 import ExpoModulesCore
 import NetworkExtension
 
-// Import C functions from wireguard.h
-// These functions will be available due to our bridging header
 public class ExpoWireguardModule: Module {
-  private var tunnelProvider: NETunnelProviderManager?
-  private var connectionHandle: Int = -1
-  private var isConnected: Bool = false
-  private var sessionName: String = "ExpoWireguard"
-
   // Events constants
-  private let EVENT_TYPE_SYSTEM = "system"
-  private let EVENT_TYPE_EXCEPTION = "exception"
-  private let EVENT_TYPE_REGULAR = "regular"
-  private let EVENT_STARTED = "started"
-  private let EVENT_STOPPED = "stopped"
-  private let EVENT_STARTED_BY_SYSTEM = "startedBySystem"
+  private let EVENT_TYPE_SYSTEM = "EV_TYPE_SYSTEM"
+  private let EVENT_TYPE_EXCEPTION = "EV_TYPE_EXCEPTION"
+  private let EVENT_TYPE_REGULAR = "EV_TYPE_REGULAR"
+  private let EVENT_STARTED = "EV_STARTED"
+  private let EVENT_STOPPED = "EV_STOPPED"
+  private let EVENT_STARTED_BY_SYSTEM = "EV_STARTED_BY_SYSTEM"
 
-  // Reference to the C functions from wireguard.h
-  private func getWgVersion() -> String {
-    return String(cString: wgVersion())
-  }
+  // Private properties
+  private var tunnelProvider: NETunnelProviderManager?
+  private var sessionName: String?
+  private var isConnected: Bool = false
+  private var sessionObserver: NSObjectProtocol?
 
+  // Define the module
   public func definition() -> ModuleDefinition {
+    // Expose constants to JavaScript
     Name("ExpoWireguard")
 
-    // Constants accessible from JavaScript
     Constants([
       "EV_TYPE_SYSTEM": self.EVENT_TYPE_SYSTEM,
       "EV_TYPE_EXCEPTION": self.EVENT_TYPE_EXCEPTION,
@@ -51,7 +46,8 @@ public class ExpoWireguardModule: Module {
       let providerManager = NETunnelProviderManager()
       let tunnelProtocol = NETunnelProviderProtocol()
 
-      tunnelProtocol.providerBundleIdentifier = "\(Bundle.main.bundleIdentifier!).NetworkExtension"
+      tunnelProtocol.providerBundleIdentifier =
+        "\(Bundle.main.bundleIdentifier!).WireGuardNetworkExtension"
       tunnelProtocol.serverAddress = "WireGuard"
 
       // Store the WireGuard config in the protocol configuration
@@ -90,6 +86,11 @@ public class ExpoWireguardModule: Module {
             self.tunnelProvider = providerManager
             self.isConnected = true
             self.sendEvent(self.EVENT_TYPE_REGULAR, ["event": self.EVENT_STARTED])
+
+            // Set up status change observer
+            if self.sessionObserver == nil {
+              self.setupTunnelObserver()
+            }
           } catch {
             self.sendEvent(
               self.EVENT_TYPE_EXCEPTION,
@@ -99,68 +100,61 @@ public class ExpoWireguardModule: Module {
       }
     }
 
-    // Disconnect from WireGuard VPN
-    AsyncFunction("Disconnect") { () -> Void in
-      guard let tunnelProvider = self.tunnelProvider else {
-        self.sendEvent(self.EVENT_TYPE_EXCEPTION, ["message": "No active VPN connection"])
-        return
-      }
-
-      tunnelProvider.connection.stopVPNTunnel()
-      self.isConnected = false
-      self.sendEvent(self.EVENT_TYPE_REGULAR, ["event": self.EVENT_STOPPED])
-    }
-
-    // Check if VPN is connected
+    // Check connection status
     AsyncFunction("Status") { () -> Bool in
       return self.isConnected
     }
 
-    // When the module is initialized
-    OnCreate {
-      // Monitor system VPN status changes
-      NotificationCenter.default.addObserver(
-        forName: NSNotification.Name.NEVPNStatusDidChange,
-        object: nil,
-        queue: nil
-      ) { [weak self] notification in
-        guard let self = self,
-          let connection = notification.object as? NEVPNConnection
-        else {
-          return
-        }
-
-        switch connection.status {
-        case .connected:
-          self.isConnected = true
-          self.sendEvent(self.EVENT_TYPE_REGULAR, ["event": self.EVENT_STARTED])
-        case .disconnected:
-          self.isConnected = false
-          self.sendEvent(self.EVENT_TYPE_REGULAR, ["event": self.EVENT_STOPPED])
-        case .reasserting:
-          // VPN is reconnecting
-          break
-        default:
-          // Other states like connecting, disconnecting
-          break
-        }
+    // Disconnect from WireGuard VPN
+    AsyncFunction("Disconnect") { () in
+      guard let tunnelProvider = self.tunnelProvider else {
+        return
       }
 
-      // Check if system tried to start VPN
-      NETunnelProviderManager.loadAllFromPreferences { [weak self] (managers, error) in
-        guard let self = self,
-          let managers = managers,
-          let manager = managers.first,
-          manager.connection.status == .connected
-        else {
-          return
-        }
+      // Stop the VPN tunnel
+      tunnelProvider.connection.stopVPNTunnel()
+    }
+  }
 
-        // VPN was started by the system
-        self.tunnelProvider = manager
+  // Set up observer for tunnel status changes
+  private func setupTunnelObserver() {
+    self.sessionObserver = NotificationCenter.default.addObserver(
+      forName: NSNotification.Name.NEVPNStatusDidChange,
+      object: nil,
+      queue: nil
+    ) { [weak self] notification in
+      guard let self = self,
+        let connection = notification.object as? NETunnelProviderSession
+      else {
+        return
+      }
+
+      switch connection.status {
+      case .disconnected, .invalid:
+        self.isConnected = false
+        self.sendEvent(self.EVENT_TYPE_REGULAR, ["event": self.EVENT_STOPPED])
+      case .connected:
         self.isConnected = true
-        self.sendEvent(self.EVENT_TYPE_SYSTEM, ["event": self.EVENT_STARTED_BY_SYSTEM])
+        self.sendEvent(self.EVENT_TYPE_REGULAR, ["event": self.EVENT_STARTED])
+      default:
+        // Other states (connecting, disconnecting, reasserting) - do nothing
+        break
       }
+    }
+  }
+
+  // Get the WireGuard version
+  private func getWgVersion() -> String {
+    // This function comes from the WireGuard framework
+    // through the bridging header
+    return String(cString: wgVersion())
+  }
+
+  // Clean up when module is destroyed
+  public func cleanup() {
+    if let observer = sessionObserver {
+      NotificationCenter.default.removeObserver(observer)
+      sessionObserver = nil
     }
   }
 }
