@@ -1,5 +1,5 @@
-[!NOTE]
-This package is under development. PRs are more than welcome.
+> [!WARNING]
+> This package is under development. PRs are more than welcome.
 
 # Expo WireGuard
 
