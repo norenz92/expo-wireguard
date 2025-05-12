@@ -1,3 +1,6 @@
+[!NOTE]
+This package is under development. PRs are more than welcome.
+
 # Expo WireGuard
 
 A native WireGuard VPN client implementation for React Native (Expo). This module provides a simple API to establish and manage WireGuard VPN connections in your Expo app.
