@@ -15,6 +15,7 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "expo.modules.wireguard.example",
+      "appleTeamId": "JS5Q2ZZA39"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +30,25 @@
     },
     "plugins": [
       "../app.plugin.js"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "build": {
+          "experimental": {
+            "ios": {
+              "appExtensions": [
+                {
+                  "targetName": "myappextension",
+                  "bundleIdentifier": "com.myapp.extension",
+                  "entitlements": {
+                    "com.apple.example": "entitlement value"
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
   }
 }
