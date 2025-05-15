@@ -3,7 +3,6 @@ import {
   withXcodeProject,
   withEntitlementsPlist,
   XcodeProject,
-  IOSConfig,
 } from 'expo/config-plugins';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -13,117 +12,79 @@ const NSE_TARGET_NAME = 'WireGuardNetworkExtension';
 const withWireGuardNetworkExtension: ConfigPlugin = (config) => {
   // Add the Network Extension entitlements
   config = withEntitlementsPlist(config, (config) => {
-    // Set network extension entitlement - proper array syntax for plist
-    config.modResults['com.apple.developer.networking.networkextension'] = ['packet-tunnel-provider'];
-
-    // Add app groups entitlement
+    // Set network extension entitlement and app groups
     const bundleId = config.ios?.bundleIdentifier || 'com.example.app';
+    config.modResults['com.apple.developer.networking.networkextension'] = ['packet-tunnel-provider'];
     config.modResults['com.apple.security.application-groups'] = [`group.${bundleId}`];
-
     return config;
   });
 
-  // Add NetworkExtension.framework to the main app
+  // Add NetworkExtension.framework to the main app and configure capabilities
   config = withXcodeProject(config, (config) => {
-    console.log("WireGuard plugin: Adding Network Extension capability");
-
+    console.log("WireGuard plugin: Adding Network Extension capability and framework to main app");
     try {
       const xcodeProject = config.modResults;
-
-      // Find the main app target
       const mainTarget = getMainTarget(xcodeProject);
+      
       if (mainTarget) {
-        // Add the NetworkExtension framework to the main app target
-        const frameworkPath = 'System/Library/Frameworks/NetworkExtension.framework';
-        const fileOptions = {
-          weak: true,
-          target: mainTarget.uuid,
-          link: true
-        };
-
-        try {
-          if (hasFrameworksBuildPhase(xcodeProject, mainTarget.uuid)) {
-            xcodeProject.addFramework(frameworkPath, fileOptions);
-            console.log("Successfully added NetworkExtension.framework to the main app target");
-          }
-        } catch (error) {
-          console.warn(`Failed to add NetworkExtension.framework: ${error}`);
-        }
-
-        // Also add Network Extension capability to the main app
+        console.log(`Found main target: ${mainTarget.name} (${mainTarget.uuid})`);
+        ensureFrameworksBuildPhase(xcodeProject, mainTarget.uuid);
+        addFrameworkDirectly(xcodeProject, mainTarget.uuid, 'System/Library/Frameworks/NetworkExtension.framework', true);
         addNetworkExtensionCapability(xcodeProject, mainTarget.uuid);
+      } else {
+        console.warn("Could not find main app target");
       }
     } catch (error) {
-      console.warn("Error configuring WireGuard capability:", error);
+      console.warn("Error configuring WireGuard capability for main app:", error);
     }
-
     return config;
   });
 
   // Add the WireGuardNetworkExtension target
   config = withXcodeProject(config, (config) => {
     console.log("WireGuard plugin: Adding WireGuardNetworkExtension target");
-
     try {
       const xcodeProject = config.modResults;
       const bundleId = config.ios?.bundleIdentifier || 'com.example.app';
       const projectPath = config.modRequest.projectRoot;
-
-      // Find the main app target
       const mainTarget = getMainTarget(xcodeProject);
+      
       if (mainTarget) {
         // Create necessary files for the extension
         createNetworkExtensionFiles(projectPath, bundleId);
 
-        // Add the WireGuardNetworkExtension target
+        // Add and configure the extension target
         const wireGuardTarget = xcodeProject.addTarget(
           NSE_TARGET_NAME,
           'app_extension',
-          'com.apple.networkextension.packet-tunnel', // Changed this to the correct extension point identifier
+          'com.apple.networkextension.packet-tunnel',
           `${bundleId}.${NSE_TARGET_NAME}`
         );
 
-        // Configure the extension target
-        xcodeProject.addBuildProperty('ENABLE_BITCODE', 'NO', wireGuardTarget.uuid);
-
-        // Use the correct path to the entitlements file
+        // Configure the target properties
         const entitlementsPath = `WireGuardNetworkExtension/${NSE_TARGET_NAME}.entitlements`;
-        xcodeProject.addBuildProperty('CODE_SIGN_ENTITLEMENTS', entitlementsPath, wireGuardTarget.uuid);
-
-        // Set the Info.plist path correctly
-        xcodeProject.addBuildProperty('INFOPLIST_FILE', 'WireGuardNetworkExtension/Info.plist', wireGuardTarget.uuid);
-
-        xcodeProject.addBuildProperty('CODE_SIGN_IDENTITY', 'iPhone Developer', wireGuardTarget.uuid);
-        xcodeProject.addBuildProperty('CODE_SIGNING_REQUIRED', 'YES', wireGuardTarget.uuid);
-
-        // Add NetworkExtension framework to the extension target
-        const frameworkPath = 'System/Library/Frameworks/NetworkExtension.framework';
-        const fileOptions = {
-          weak: false, // Not weak for the extension target
-          target: wireGuardTarget.uuid,
-          link: true
+        const targetProps = {
+          'ENABLE_BITCODE': 'NO',
+          'CODE_SIGN_ENTITLEMENTS': entitlementsPath,
+          'INFOPLIST_FILE': 'WireGuardNetworkExtension/Info.plist',
+          'CODE_SIGN_IDENTITY': 'iPhone Developer',
+          'CODE_SIGNING_REQUIRED': 'YES'
         };
+        
+        // Add all properties at once
+        Object.entries(targetProps).forEach(([key, value]) => {
+          xcodeProject.addBuildProperty(key, value, wireGuardTarget.uuid);
+        });
 
-        try {
-          // Add build phase if it doesn't exist
-          addBuildPhaseIfNeeded(xcodeProject, wireGuardTarget.uuid);
-
-          // Add the framework
-          xcodeProject.addFramework(frameworkPath, fileOptions);
-          console.log("Successfully added NetworkExtension.framework to the WireGuardNetworkExtension target");
-
-          // Add explicit Network Extension capability to the extension target
-          addNetworkExtensionCapability(xcodeProject, wireGuardTarget.uuid);
-
-          console.log("Successfully added WireGuardNetworkExtension target");
-        } catch (error) {
-          console.warn(`Failed to add NetworkExtension.framework to extension: ${error}`);
-        }
+        // Add framework and capability to extension target
+        addNetworkExtensionFramework(xcodeProject, wireGuardTarget.uuid);
+        addNetworkExtensionCapability(xcodeProject, wireGuardTarget.uuid);
+        
+        console.log("Successfully added WireGuardNetworkExtension target");
       }
     } catch (error) {
       console.warn("Error adding WireGuardNetworkExtension target:", error);
     }
-
     return config;
   });
 
@@ -131,51 +92,157 @@ const withWireGuardNetworkExtension: ConfigPlugin = (config) => {
 };
 
 /**
- * Create necessary files for the network extension
+ * Add NetworkExtension.framework to a target with proper configuration
  */
-function createNetworkExtensionFiles(projectPath: string, bundleId: string): void {
+function addNetworkExtensionFramework(xcodeProject: XcodeProject, targetUuid: string): void {
   try {
-    // Create paths for the extension files - use the correct directory structure
-    // The path should be in the iOS project directory
-    const iosDir = path.join(projectPath, 'ios');
-    const extensionEntitlementsDir = path.join(iosDir, 'WireGuardNetworkExtension');
-    const entitlementsPath = path.join(extensionEntitlementsDir, `${NSE_TARGET_NAME}.entitlements`);
-    const infoPlistPath = path.join(extensionEntitlementsDir, 'Info.plist');
-
-    // Always create directories and files during config plugin execution
-    console.log(`Creating extension directory at: ${extensionEntitlementsDir}`);
-
-    // Create extension directory if it doesn't exist
-    if (!fs.existsSync(extensionEntitlementsDir)) {
-      fs.mkdirSync(extensionEntitlementsDir, { recursive: true });
-      console.log(`Created extension directory: ${extensionEntitlementsDir}`);
-    }
-
-    // Create entitlements file if it doesn't exist
-    if (!fs.existsSync(entitlementsPath)) {
-      const entitlementsContent = createEntitlementsContent(bundleId);
-      fs.writeFileSync(entitlementsPath, entitlementsContent);
-      console.log(`Created entitlements file for ${NSE_TARGET_NAME} at ${entitlementsPath}`);
-    } else {
-      console.log(`Entitlements file already exists at ${entitlementsPath}`);
-    }
-
-    // Create Info.plist if it doesn't exist
-    if (!fs.existsSync(infoPlistPath)) {
-      const infoPlistContent = createInfoPlistContent(bundleId);
-      fs.writeFileSync(infoPlistPath, infoPlistContent);
-      console.log(`Created Info.plist for ${NSE_TARGET_NAME} at ${infoPlistPath}`);
-    } else {
-      console.log(`Info.plist already exists at ${infoPlistPath}`);
-    }
+    console.log(`Adding NetworkExtension.framework to target: ${targetUuid}`);
+    ensureFrameworksBuildPhase(xcodeProject, targetUuid);
+    const isWeak = !isTargetExtension(xcodeProject, targetUuid);
+    addFrameworkDirectly(
+      xcodeProject, targetUuid,
+      'System/Library/Frameworks/NetworkExtension.framework',
+      isWeak
+    );
   } catch (error) {
-    console.warn(`Error creating files for WireGuardNetworkExtension: ${error}`);
+    console.warn(`Failed to add NetworkExtension.framework: ${error}`);
   }
 }
 
 /**
- * Get the main target from the Xcode project
+ * Ensure the Frameworks build phase exists for a target
  */
+function ensureFrameworksBuildPhase(xcodeProject: XcodeProject, targetUuid: string): void {
+  if (!hasFrameworksBuildPhase(xcodeProject, targetUuid)) {
+    console.log(`Adding Frameworks build phase to target: ${targetUuid}`);
+    xcodeProject.addBuildPhase([], 'PBXFrameworksBuildPhase', 'Frameworks', targetUuid);
+  }
+}
+
+/**
+ * Add framework directly to a target
+ */
+function addFrameworkDirectly(xcodeProject: XcodeProject, targetUuid: string, frameworkPath: string, weak: boolean): void {
+  try {
+    const frameworkName = path.basename(frameworkPath);
+    
+    if (hasFramework(xcodeProject, targetUuid, frameworkName)) {
+      console.log(`Framework ${frameworkName} already exists for target ${targetUuid}`);
+      return;
+    }
+    
+    const buildPhaseUuid = getBuildPhaseUuid(xcodeProject, targetUuid, 'PBXFrameworksBuildPhase');
+    if (!buildPhaseUuid) {
+      throw new Error(`Could not find frameworks build phase for target: ${targetUuid}`);
+    }
+    
+    // Create or get file reference
+    let fileRef: string | undefined;
+    const fileReferences = xcodeProject.hash.project.objects.PBXFileReference;
+    
+    // Look for existing file reference
+    for (const ref in fileReferences) {
+      if (ref.includes('_comment')) continue;
+      const fileReference = fileReferences[ref];
+      if (fileReference.path === frameworkPath || fileReference.name === frameworkName) {
+        fileRef = ref;
+        break;
+      }
+    }
+    
+    // Create new file reference if needed
+    if (!fileRef) {
+      fileRef = xcodeProject.generateUuid();
+      xcodeProject.hash.project.objects.PBXFileReference[fileRef] = {
+        isa: 'PBXFileReference',
+        lastKnownFileType: 'wrapper.framework',
+        name: frameworkName,
+        path: frameworkPath,
+        sourceTree: 'SDKROOT'
+      };
+      xcodeProject.hash.project.objects.PBXFileReference[`${fileRef}_comment`] = frameworkName;
+    }
+    
+    // Create build file
+    const buildFileUuid = xcodeProject.generateUuid();
+    const settings: any = weak ? { ATTRIBUTES: ['Weak'] } : {};
+    
+    xcodeProject.hash.project.objects.PBXBuildFile[buildFileUuid] = {
+      isa: 'PBXBuildFile',
+      fileRef: fileRef,
+      settings: settings
+    };
+    xcodeProject.hash.project.objects.PBXBuildFile[`${buildFileUuid}_comment`] = `${frameworkName} in Frameworks`;
+    
+    // Add to build phase
+    xcodeProject.hash.project.objects.PBXFrameworksBuildPhase[buildPhaseUuid].files.push({
+      value: buildFileUuid,
+      comment: `${frameworkName} in Frameworks`
+    });
+    
+    console.log(`Successfully added ${frameworkName} to target ${targetUuid}`);
+  } catch (error) {
+    console.warn(`Failed to add framework directly: ${error}`);
+  }
+}
+
+/**
+ * Helper functions for target and framework management
+ */
+function hasFramework(xcodeProject: XcodeProject, targetUuid: string, frameworkName: string): boolean {
+  try {
+    const buildPhaseUuid = getBuildPhaseUuid(xcodeProject, targetUuid, 'PBXFrameworksBuildPhase');
+    if (buildPhaseUuid) {
+      const buildPhase = xcodeProject.hash.project.objects.PBXFrameworksBuildPhase[buildPhaseUuid];
+      if (buildPhase && buildPhase.files) {
+        for (const fileRef of buildPhase.files) {
+          const buildFile = xcodeProject.hash.project.objects.PBXBuildFile[fileRef.value];
+          if (buildFile && buildFile.fileRef) {
+            const pbxFileRef = xcodeProject.hash.project.objects.PBXFileReference[buildFile.fileRef];
+            if (pbxFileRef && pbxFileRef.name === frameworkName) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`Error checking for framework: ${error}`);
+  }
+  return false;
+}
+
+function getBuildPhaseUuid(xcodeProject: XcodeProject, targetUuid: string, buildPhaseType: string): string | null {
+  try {
+    const target = xcodeProject.pbxNativeTargetSection()[targetUuid];
+    if (target && target.buildPhases) {
+      for (const phaseEntry of target.buildPhases) {
+        const allBuildPhases = xcodeProject.hash.project.objects[buildPhaseType];
+        if (allBuildPhases && allBuildPhases[phaseEntry.value]) {
+          return phaseEntry.value;
+        }
+      }
+    }
+  } catch (error) {
+    console.warn(`Error getting build phase UUID: ${error}`);
+  }
+  return null;
+}
+
+function hasFrameworksBuildPhase(xcodeProject: XcodeProject, targetUuid: string): boolean {
+  return getBuildPhaseUuid(xcodeProject, targetUuid, 'PBXFrameworksBuildPhase') !== null;
+}
+
+function isTargetExtension(xcodeProject: XcodeProject, targetUuid: string): boolean {
+  try {
+    const target = xcodeProject.pbxNativeTargetSection()[targetUuid];
+    return !!(target && target.comment && target.comment.includes(NSE_TARGET_NAME));
+  } catch (error) {
+    console.warn(`Error determining if target is extension: ${error}`);
+    return false;
+  }
+}
+
 function getMainTarget(xcodeProject: XcodeProject): { uuid: string; name: string } | null {
   try {
     const targets = xcodeProject.getFirstProject().firstProject.targets;
@@ -186,172 +253,127 @@ function getMainTarget(xcodeProject: XcodeProject): { uuid: string; name: string
       !target.comment.includes('Watch')
     );
 
-    if (mainTarget) {
-      return {
-        uuid: mainTarget.value,
-        name: mainTarget.comment
-      };
-    }
+    return mainTarget ? { uuid: mainTarget.value, name: mainTarget.comment } : null;
   } catch (error) {
     console.warn("Error finding main target:", error);
+    return null;
   }
-
-  return null;
 }
 
 /**
- * Add NetworkExtension capability to the target
+ * Extension capability and supporting files management
  */
 function addNetworkExtensionCapability(xcodeProject: XcodeProject, targetUuid: string): void {
   try {
-    console.log(`Adding NetworkExtension capability to target: ${targetUuid}`);
-
-    // Find the target attributes section
     const pbxProjectSection = xcodeProject.pbxProjectSection();
     const pbxProjectKey = Object.keys(pbxProjectSection).find(key => !key.includes('_comment'));
-
+    
     if (!pbxProjectKey) {
       console.warn("Could not find project section");
       return;
     }
 
     const pbxProject = pbxProjectSection[pbxProjectKey];
-
-    // Create required attribute structure if it doesn't exist
-    if (!pbxProject.attributes) {
-      pbxProject.attributes = {};
-    }
-
-    if (!pbxProject.attributes.TargetAttributes) {
-      pbxProject.attributes.TargetAttributes = {};
-    }
-
-    if (!pbxProject.attributes.TargetAttributes[targetUuid]) {
-      pbxProject.attributes.TargetAttributes[targetUuid] = {};
-    }
-
+    
+    // Ensure target attributes exist
+    pbxProject.attributes = pbxProject.attributes || {};
+    pbxProject.attributes.TargetAttributes = pbxProject.attributes.TargetAttributes || {};
+    pbxProject.attributes.TargetAttributes[targetUuid] = pbxProject.attributes.TargetAttributes[targetUuid] || {};
+    
     const targetAttributes = pbxProject.attributes.TargetAttributes[targetUuid];
-
-    // Add SystemCapabilities if it doesn't exist
-    if (!targetAttributes.SystemCapabilities) {
-      targetAttributes.SystemCapabilities = {};
-    }
-
-    // These are the correct keys for Network Extension capability
-    // Both key formats should be added for compatibility
+    targetAttributes.SystemCapabilities = targetAttributes.SystemCapabilities || {};
+    
+    // Add Network Extension capability
     targetAttributes.SystemCapabilities['com.apple.NetworkExtensions.iOS'] = { enabled: 1 };
     targetAttributes.SystemCapabilities['com.apple.NetworkExtension'] = { enabled: 1 };
-
-    // Add Development Team if not already present (important for capabilities)
+    
+    // Add placeholder Development Team if needed
     if (!targetAttributes.DevelopmentTeam) {
-      // Use a placeholder that will need to be updated by the user
       targetAttributes.DevelopmentTeam = "DEVELOPMENT_TEAM";
       console.log("Added placeholder DevelopmentTeam. User will need to update this.");
     }
-
-    // Manually add project settings for NetworkExtension capability
+    
+    // Update build settings
     enableNetworkExtensionBuildSettings(xcodeProject, targetUuid);
-
+    
     console.log(`Successfully added NetworkExtension capability to target: ${targetUuid}`);
   } catch (error) {
     console.warn("Error adding NetworkExtension capability:", error);
   }
 }
 
-/**
- * Enable Network Extension in build settings 
- */
 function enableNetworkExtensionBuildSettings(xcodeProject: XcodeProject, targetUuid: string): void {
   try {
-    // Get all configurations for the target
+    // Get target's build configurations
+    const nativeTargets = xcodeProject.pbxNativeTargetSection();
+    const target = nativeTargets[targetUuid];
+    
+    if (!target?.buildConfigurationList) {
+      console.warn(`Could not find build configuration list for target: ${targetUuid}`);
+      return;
+    }
+    
+    const configList = xcodeProject.pbxXCConfigurationList()[target.buildConfigurationList];
+    
+    if (!configList?.buildConfigurations) {
+      console.warn(`Invalid build configuration list for target: ${targetUuid}`);
+      return;
+    }
+    
+    const buildConfigIds = configList.buildConfigurations.map((config: any) => config.value);
     const configurations = xcodeProject.pbxXCBuildConfigurationSection();
-
-    // Find all build configurations that belong to the target
-    for (const configKey in configurations) {
-      if (configKey.endsWith('_comment')) continue;
-
-      const config = configurations[configKey];
-
-      // Check if this configuration belongs to the target
-      if (config.buildSettings && config.buildSettings.PRODUCT_NAME &&
-        config.buildSettings.PRODUCT_NAME.includes(NSE_TARGET_NAME)) {
-
-        // Add/update the build settings for Network Extension
-        const buildSettings = config.buildSettings;
-
-        // Enable network extension entitlement with the correct path
+    
+    // Update each build configuration for this target
+    buildConfigIds.forEach((configId: string) => {
+      if (!configurations[configId]?.buildSettings) return;
+      
+      const buildSettings = configurations[configId].buildSettings;
+      const isExtension = buildSettings.PRODUCT_NAME && 
+                          typeof buildSettings.PRODUCT_NAME === 'string' && 
+                          buildSettings.PRODUCT_NAME.includes(NSE_TARGET_NAME);
+      
+      if (isExtension) {
+        // Extension target settings
         buildSettings.CODE_SIGN_ENTITLEMENTS = `WireGuardNetworkExtension/${NSE_TARGET_NAME}.entitlements`;
-
-        // Set the Info.plist path correctly
         buildSettings.INFOPLIST_FILE = 'WireGuardNetworkExtension/Info.plist';
-
-        // Add any other needed build settings for Network Extension
-        buildSettings.ENABLE_BITCODE = "NO"; // Often required for extensions
-
-        console.log(`Updated build settings for configuration: ${configKey}`);
+        buildSettings.ENABLE_BITCODE = "NO";
       }
-    }
+    });
   } catch (error) {
-    console.warn("Error updating build settings for Network Extension:", error);
+    console.warn("Error updating build settings:", error);
   }
 }
 
-/**
- * Add frameworks build phase to target if needed
- */
-function addBuildPhaseIfNeeded(xcodeProject: XcodeProject, targetUuid: string): void {
+function createNetworkExtensionFiles(projectPath: string, bundleId: string): void {
   try {
-    if (!hasFrameworksBuildPhase(xcodeProject, targetUuid)) {
-      // Get the target
-      const pbxTargetSection = xcodeProject.pbxNativeTargetSection();
-      const target = pbxTargetSection[targetUuid];
+    const iosDir = path.join(projectPath, 'ios');
+    const extensionDir = path.join(iosDir, 'WireGuardNetworkExtension');
+    const entitlementsPath = path.join(extensionDir, `${NSE_TARGET_NAME}.entitlements`);
+    const infoPlistPath = path.join(extensionDir, 'Info.plist');
 
-      if (target) {
-        // Create a new frameworks build phase
-        xcodeProject.addBuildPhase(
-          [], // files
-          'PBXFrameworksBuildPhase',
-          'Frameworks',
-          targetUuid
-        );
+    // Create directory if needed
+    if (!fs.existsSync(extensionDir)) {
+      fs.mkdirSync(extensionDir, { recursive: true });
+      console.log(`Created extension directory: ${extensionDir}`);
+    }
 
-        console.log("Added Frameworks build phase to the WireGuardNetworkExtension target");
-      }
+    // Create files if needed
+    if (!fs.existsSync(entitlementsPath)) {
+      fs.writeFileSync(entitlementsPath, createEntitlementsContent(bundleId));
+      console.log(`Created entitlements file at ${entitlementsPath}`);
+    }
+
+    if (!fs.existsSync(infoPlistPath)) {
+      fs.writeFileSync(infoPlistPath, createInfoPlistContent(bundleId));
+      console.log(`Created Info.plist at ${infoPlistPath}`);
     }
   } catch (error) {
-    console.warn("Error adding frameworks build phase:", error);
+    console.warn(`Error creating extension files: ${error}`);
   }
 }
 
 /**
- * Check if the target has a frameworks build phase
- */
-function hasFrameworksBuildPhase(xcodeProject: XcodeProject, targetUuid: string): boolean {
-  try {
-    // Get the target
-    const pbxTargetSection = xcodeProject.pbxNativeTargetSection();
-    const target = pbxTargetSection[targetUuid];
-
-    if (target && target.buildPhases) {
-      // Check each build phase to find PBXFrameworksBuildPhase
-      for (const phaseEntry of target.buildPhases) {
-        const phaseUuid = phaseEntry.value;
-        const allBuildPhases = xcodeProject.hash.project.objects['PBXFrameworksBuildPhase'];
-
-        if (allBuildPhases && allBuildPhases[phaseUuid]) {
-          return true;
-        }
-      }
-    }
-  } catch (error) {
-    console.warn("Error checking for frameworks build phase:", error);
-  }
-
-  return false;
-}
-
-/**
- * Create the content for the network extension entitlements file
+ * Create template files content
  */
 function createEntitlementsContent(bundleId: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -370,9 +392,6 @@ function createEntitlementsContent(bundleId: string): string {
 </plist>`;
 }
 
-/**
- * Create Info.plist content for the network extension
- */
 function createInfoPlistContent(bundleId: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
