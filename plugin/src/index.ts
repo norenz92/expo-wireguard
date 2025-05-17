@@ -6,10 +6,14 @@ import {
 } from 'expo/config-plugins';
 import * as fs from 'fs';
 import * as path from 'path';
+import withWireGuardGoBridge from './ios/withWireGuardGoBridge';
 
 const NSE_TARGET_NAME = 'WireGuardNetworkExtension';
 
 const withWireGuardNetworkExtension: ConfigPlugin = (config) => {
+  // Add the External Build System target for WireguardGoBridge
+  config = withWireGuardGoBridge(config);
+
   // Add the Network Extension entitlements
   config = withEntitlementsPlist(config, (config) => {
     // Set network extension entitlement and app groups
@@ -426,4 +430,5 @@ function createInfoPlistContent(bundleId: string): string {
 </plist>`;
 }
 
+export { default as withWireGuardGoBridge } from './ios/withWireGuardGoBridge';
 export default withWireGuardNetworkExtension;

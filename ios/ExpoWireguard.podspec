@@ -19,23 +19,18 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  s.vendored_frameworks = 'Frameworks/Wireguard.xcframework'
-
+  
   # Swift/Objective-C compatibility
-  s.pod_target_xcconfig = {
-    'DEFINES_MODULE' => 'YES',
-    'SWIFT_COMPILATION_MODE' => 'wholemodule',
-    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/Frameworks/Wireguard.xcframework/ios-arm64/Headers" "$(PODS_TARGET_SRCROOT)/Frameworks/Wireguard.xcframework/ios-arm64-simulator/Headers"',
-    # Disable the module map to prevent redefinition errors
-    'CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES' => 'YES',
-    'MODULEMAP_FILE' => ''
+  s.pod_target_xcconfig = { 
+    'DEFINES_MODULE' => 'YES'
   }
-
-  # The following script runs during installation to handle module map conflicts
-  s.prepare_command = <<-CMD
-    # Rename or remove conflicting module maps to prevent redefinition errors
-    find ./Frameworks/Wireguard.xcframework -name "module.modulemap" -exec rm {} \\;
-  CMD
-
-  s.source_files = 'src/**/*.{h,m,mm,swift,hpp,cpp}'
+  
+  # Add WireGuard as Swift Package Manager dependency without user interaction
+  spm_dependency(s,
+    url: 'https://git.zx2c4.com/wireguard-apple',
+    requirement: {kind: 'exactVersion', version: '1.0.15-26'},
+    products: ['WireGuardKit']
+  )
+  
+  s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
 end
