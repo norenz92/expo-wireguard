@@ -6,30 +6,30 @@ import {
 } from 'expo/config-plugins';
 import * as fs from 'fs';
 import * as path from 'path';
-import withWireGuardGoBridge from './ios/withWireGuardGoBridge';
 
 const NSE_TARGET_NAME = 'WireGuardNetworkExtension';
+const WIREGUARD_GO_BRIDGE_TARGET = 'WireguardGoBridge';
 
 const withWireGuardNetworkExtension: ConfigPlugin = (config) => {
-  // Add the External Build System target for WireguardGoBridge
-  config = withWireGuardGoBridge(config);
-
-  // Add the Network Extension entitlements
+  // Step 1: Add the Network Extension entitlements
   config = withEntitlementsPlist(config, (config) => {
-    // Set network extension entitlement and app groups
     const bundleId = config.ios?.bundleIdentifier || 'com.example.app';
     config.modResults['com.apple.developer.networking.networkextension'] = ['packet-tunnel-provider'];
     config.modResults['com.apple.security.application-groups'] = [`group.${bundleId}`];
     return config;
   });
 
-  // Add NetworkExtension.framework to the main app and configure capabilities
+  // Step 2: All Xcode project modifications in a single operation
   config = withXcodeProject(config, (config) => {
-    console.log("WireGuard plugin: Adding Network Extension capability and framework to main app");
+    const xcodeProject = config.modResults;
+    const projectRoot = config.modRequest.projectRoot;
+    const bundleId = config.ios?.bundleIdentifier || 'com.example.app';
+    
     try {
-      const xcodeProject = config.modResults;
-      const mainTarget = getMainTarget(xcodeProject);
+      console.log("WireGuard plugin: Setting up WireGuard targets and capabilities");
       
+      // Get main target and configure it
+      const mainTarget = getMainTarget(xcodeProject);
       if (mainTarget) {
         console.log(`Found main target: ${mainTarget.name} (${mainTarget.uuid})`);
         ensureFrameworksBuildPhase(xcodeProject, mainTarget.uuid);
@@ -37,63 +37,249 @@ const withWireGuardNetworkExtension: ConfigPlugin = (config) => {
         addNetworkExtensionCapability(xcodeProject, mainTarget.uuid);
       } else {
         console.warn("Could not find main app target");
+        return config;
       }
-    } catch (error) {
-      console.warn("Error configuring WireGuard capability for main app:", error);
-    }
-    return config;
-  });
-
-  // Add the WireGuardNetworkExtension target
-  config = withXcodeProject(config, (config) => {
-    console.log("WireGuard plugin: Adding WireGuardNetworkExtension target");
-    try {
-      const xcodeProject = config.modResults;
-      const bundleId = config.ios?.bundleIdentifier || 'com.example.app';
-      const projectPath = config.modRequest.projectRoot;
-      const mainTarget = getMainTarget(xcodeProject);
       
-      if (mainTarget) {
-        // Create necessary files for the extension
-        createNetworkExtensionFiles(projectPath, bundleId);
-
-        // Add and configure the extension target
-        const wireGuardTarget = xcodeProject.addTarget(
-          NSE_TARGET_NAME,
-          'app_extension',
-          'com.apple.networkextension.packet-tunnel',
-          `${bundleId}.${NSE_TARGET_NAME}`
-        );
-
-        // Configure the target properties
-        const entitlementsPath = `WireGuardNetworkExtension/${NSE_TARGET_NAME}.entitlements`;
-        const targetProps = {
-          'ENABLE_BITCODE': 'NO',
-          'CODE_SIGN_ENTITLEMENTS': entitlementsPath,
-          'INFOPLIST_FILE': 'WireGuardNetworkExtension/Info.plist',
-          'CODE_SIGN_IDENTITY': 'iPhone Developer',
-          'CODE_SIGNING_REQUIRED': 'YES'
-        };
-        
-        // Add all properties at once
-        Object.entries(targetProps).forEach(([key, value]) => {
-          xcodeProject.addBuildProperty(key, value, wireGuardTarget.uuid);
-        });
-
-        // Add framework and capability to extension target
-        addNetworkExtensionFramework(xcodeProject, wireGuardTarget.uuid);
-        addNetworkExtensionCapability(xcodeProject, wireGuardTarget.uuid);
-        
-        console.log("Successfully added WireGuardNetworkExtension target");
-      }
+      // 1. First, add the WireguardGoBridge External Build System target
+      console.log(`Adding ${WIREGUARD_GO_BRIDGE_TARGET} External Build System target...`);
+      const goBridgeTargetUuid = addExternalBuildSystemTarget(xcodeProject, projectRoot);
+      console.log(`Successfully added ${WIREGUARD_GO_BRIDGE_TARGET} target with UUID: ${goBridgeTargetUuid}`);
+      
+      // 2. Then add the network extension target and set dependency
+      console.log("Adding WireGuardNetworkExtension target");
+      createNetworkExtensionFiles(projectRoot, bundleId);
+      
+      const wireGuardTarget = xcodeProject.addTarget(
+        NSE_TARGET_NAME,
+        'app_extension',
+        'com.apple.networkextension.packet-tunnel',
+        `${bundleId}.${NSE_TARGET_NAME}`
+      );
+      
+      // Configure target properties
+      const entitlementsPath = `WireGuardNetworkExtension/${NSE_TARGET_NAME}.entitlements`;
+      const targetProps = {
+        'ENABLE_BITCODE': 'NO',
+        'CODE_SIGN_ENTITLEMENTS': entitlementsPath,
+        'INFOPLIST_FILE': 'WireGuardNetworkExtension/Info.plist',
+        'CODE_SIGN_IDENTITY': 'iPhone Developer',
+        'CODE_SIGNING_REQUIRED': 'YES'
+      };
+      
+      Object.entries(targetProps).forEach(([key, value]) => {
+        xcodeProject.addBuildProperty(key, value, wireGuardTarget.uuid);
+      });
+      
+      // Add framework and capability
+      addNetworkExtensionFramework(xcodeProject, wireGuardTarget.uuid);
+      addNetworkExtensionCapability(xcodeProject, wireGuardTarget.uuid);
+      
+      // Link WireGuardKit with the network extension target
+      console.log(`Adding WireGuardKit library to ${NSE_TARGET_NAME} target`);
+      addWireGuardKitToTarget(xcodeProject, wireGuardTarget.uuid);
+      
+      // Add dependency using the target UUID directly (not the name)
+      console.log(`Adding dependency from ${NSE_TARGET_NAME} to ${WIREGUARD_GO_BRIDGE_TARGET}`);
+      addTargetDependencyByUuid(xcodeProject, wireGuardTarget.uuid, goBridgeTargetUuid, WIREGUARD_GO_BRIDGE_TARGET);
+      
+      console.log("Successfully added WireGuardNetworkExtension target");
+      
+      // 3. Add the WireGuardNetworkExtension as a dependency to the main app target
+      console.log(`Adding dependency from ${mainTarget.name} to ${NSE_TARGET_NAME}`);
+      addTargetDependencyByUuid(xcodeProject, mainTarget.uuid, wireGuardTarget.uuid, NSE_TARGET_NAME);
+      console.log(`Successfully added ${NSE_TARGET_NAME} as a dependency to main target`);
+      
     } catch (error) {
-      console.warn("Error adding WireGuardNetworkExtension target:", error);
+      console.warn("Error configuring WireGuard targets:", error);
     }
+    
     return config;
   });
 
   return config;
 };
+
+/**
+ * Add the WireguardGoBridge External Build System target to the Xcode project
+ * @returns The UUID of the new target
+ */
+function addExternalBuildSystemTarget(xcodeProject: XcodeProject, projectRoot: string): string {
+  // Generate a UUID for the new target
+  const targetUuid = xcodeProject.generateUuid();
+  const targetComment = `${WIREGUARD_GO_BRIDGE_TARGET}`;
+  
+  // Calculate working directory - this should point to the WireGuard Go code
+  // We're using the path where WireGuardKit would typically be located as an SPM dependency
+  const workingDirectory = "\"${BUILD_DIR%Build/*}SourcePackages/checkouts/wireguard-apple/Sources/WireGuardKitGo\"";
+  
+  // Create the External Build System target (PBXLegacyTarget)
+  xcodeProject.hash.project.objects.PBXLegacyTarget = xcodeProject.hash.project.objects.PBXLegacyTarget || {};
+  xcodeProject.hash.project.objects.PBXLegacyTarget[targetUuid] = {
+    isa: 'PBXLegacyTarget',
+    buildArgumentsString: '"${ACTION}"',  // Pass the Xcode action (build, clean, etc.) to make
+    buildConfigurationList: addBuildConfigurationForTarget(xcodeProject, targetUuid),
+    buildPhases: [],
+    buildToolPath: '/usr/bin/make',  // Use make as the build tool
+    buildWorkingDirectory: workingDirectory,
+    dependencies: [],
+    name: WIREGUARD_GO_BRIDGE_TARGET,
+    productName: WIREGUARD_GO_BRIDGE_TARGET
+  };
+  xcodeProject.hash.project.objects.PBXLegacyTarget[`${targetUuid}_comment`] = targetComment;
+  
+  // Add the target to the project's targets list
+  const projectSection = xcodeProject.pbxProjectSection();
+  const projectKey = Object.keys(projectSection).find(key => !key.includes('_comment'));
+  if (projectKey) {
+    const targets = projectSection[projectKey].targets || [];
+    targets.push({ value: targetUuid, comment: targetComment });
+    projectSection[projectKey].targets = targets;
+  }
+  
+  return targetUuid;
+}
+
+/**
+ * Add build configurations (Debug and Release) for the external build target
+ */
+function addBuildConfigurationForTarget(xcodeProject: XcodeProject, targetUuid: string): string {
+  // Create build configuration list
+  const configListUuid = xcodeProject.generateUuid();
+  const configListComment = `Build configuration list for PBXLegacyTarget "${WIREGUARD_GO_BRIDGE_TARGET}"`;
+  
+  // Create Debug configuration
+  const debugConfigUuid = xcodeProject.generateUuid();
+  const debugConfigComment = "Debug";
+  
+  // Create Release configuration
+  const releaseConfigUuid = xcodeProject.generateUuid();
+  const releaseConfigComment = "Release";
+  
+  // Add configurations to the project
+  xcodeProject.hash.project.objects.XCBuildConfiguration = xcodeProject.hash.project.objects.XCBuildConfiguration || {};
+  xcodeProject.hash.project.objects.XCBuildConfiguration[debugConfigUuid] = {
+    isa: 'XCBuildConfiguration',
+    buildSettings: {
+      PRODUCT_NAME: WIREGUARD_GO_BRIDGE_TARGET,
+      // Fix: Properly quote values that contain spaces
+      SUPPORTED_PLATFORMS: "\"iphoneos iphonesimulator\"",
+      SDKROOT: "iphoneos"
+    },
+    name: 'Debug'
+  };
+  xcodeProject.hash.project.objects.XCBuildConfiguration[`${debugConfigUuid}_comment`] = debugConfigComment;
+  
+  xcodeProject.hash.project.objects.XCBuildConfiguration[releaseConfigUuid] = {
+    isa: 'XCBuildConfiguration',
+    buildSettings: {
+      PRODUCT_NAME: WIREGUARD_GO_BRIDGE_TARGET,
+      // Fix: Properly quote values that contain spaces
+      SUPPORTED_PLATFORMS: "\"iphoneos iphonesimulator\"",
+      SDKROOT: "iphoneos"
+    },
+    name: 'Release'
+  };
+  xcodeProject.hash.project.objects.XCBuildConfiguration[`${releaseConfigUuid}_comment`] = releaseConfigComment;
+  
+  // Create configuration list that references these configurations
+  xcodeProject.hash.project.objects.XCConfigurationList = xcodeProject.hash.project.objects.XCConfigurationList || {};
+  xcodeProject.hash.project.objects.XCConfigurationList[configListUuid] = {
+    isa: 'XCConfigurationList',
+    buildConfigurations: [
+      { value: debugConfigUuid, comment: debugConfigComment },
+      { value: releaseConfigUuid, comment: releaseConfigComment }
+    ],
+    defaultConfigurationIsVisible: 0,
+    defaultConfigurationName: 'Release'
+  };
+  xcodeProject.hash.project.objects.XCConfigurationList[`${configListUuid}_comment`] = configListComment;
+  
+  return configListUuid;
+}
+
+/**
+ * Add a dependency between targets using UUIDs
+ */
+function addTargetDependencyByUuid(
+  xcodeProject: XcodeProject, 
+  targetUuid: string, 
+  dependencyTargetUuid: string,
+  dependencyTargetName: string
+): void {
+  try {
+    console.log(`Adding dependency from ${targetUuid} to ${dependencyTargetUuid}`);
+    
+    // Create a container item proxy for the dependency target
+    const containerItemProxyUuid = xcodeProject.generateUuid();
+    const containerItemProxyComment = `PBXContainerItemProxy ${dependencyTargetName}`;
+    
+    xcodeProject.hash.project.objects.PBXContainerItemProxy = xcodeProject.hash.project.objects.PBXContainerItemProxy || {};
+    xcodeProject.hash.project.objects.PBXContainerItemProxy[containerItemProxyUuid] = {
+      isa: 'PBXContainerItemProxy',
+      containerPortal: xcodeProject.hash.project.rootObject,
+      proxyType: 1,
+      remoteGlobalIDString: dependencyTargetUuid,
+      remoteInfo: dependencyTargetName
+    };
+    xcodeProject.hash.project.objects.PBXContainerItemProxy[`${containerItemProxyUuid}_comment`] = containerItemProxyComment;
+    
+    // Create a target dependency using the container proxy
+    const targetDependencyUuid = xcodeProject.generateUuid();
+    const targetDependencyComment = dependencyTargetName;
+    
+    xcodeProject.hash.project.objects.PBXTargetDependency = xcodeProject.hash.project.objects.PBXTargetDependency || {};
+    xcodeProject.hash.project.objects.PBXTargetDependency[targetDependencyUuid] = {
+      isa: 'PBXTargetDependency',
+      target: dependencyTargetUuid,
+      targetProxy: containerItemProxyUuid
+    };
+    xcodeProject.hash.project.objects.PBXTargetDependency[`${targetDependencyUuid}_comment`] = targetDependencyComment;
+    
+    // Add the target dependency to the dependent target
+    const nativeTargets = xcodeProject.pbxNativeTargetSection();
+    const target = nativeTargets[targetUuid];
+    
+    if (!target) {
+      console.warn(`Target ${targetUuid} not found`);
+      return;
+    }
+    
+    target.dependencies = target.dependencies || [];
+    target.dependencies.push({
+      value: targetDependencyUuid,
+      comment: targetDependencyComment
+    });
+    
+    console.log(`Successfully added dependency on ${dependencyTargetUuid} to target ${targetUuid}`);
+  } catch (error) {
+    console.warn(`Error adding target dependency: ${error}`);
+  }
+}
+
+/**
+ * Add a dependency between targets by finding the dependency target UUID
+ */
+function addTargetDependency(xcodeProject: XcodeProject, targetUuid: string, dependencyTargetName: string): void {
+  try {
+    console.log(`Adding dependency on ${dependencyTargetName} to target ${targetUuid}`);
+    
+    // Find the target UUID for the dependency target by name
+    const targets = xcodeProject.getFirstProject().firstProject.targets;
+    const dependencyTarget = targets.find((target: any) => 
+      target.comment && target.comment === dependencyTargetName
+    );
+    
+    if (!dependencyTarget) {
+      console.warn(`Dependency target ${dependencyTargetName} not found`);
+      return;
+    }
+    
+    const dependencyTargetUuid = dependencyTarget.value;
+    addTargetDependencyByUuid(xcodeProject, targetUuid, dependencyTargetUuid, dependencyTargetName);
+  } catch (error) {
+    console.warn(`Error adding target dependency: ${error}`);
+  }
+}
 
 /**
  * Add NetworkExtension.framework to a target with proper configuration
@@ -187,6 +373,79 @@ function addFrameworkDirectly(xcodeProject: XcodeProject, targetUuid: string, fr
     console.log(`Successfully added ${frameworkName} to target ${targetUuid}`);
   } catch (error) {
     console.warn(`Failed to add framework directly: ${error}`);
+  }
+}
+
+/**
+ * Add WireGuardKit library to the target
+ */
+function addWireGuardKitToTarget(xcodeProject: XcodeProject, targetUuid: string): void {
+  try {
+    console.log(`Adding WireGuardKit library to target: ${targetUuid}`);
+    
+    // Ensure the target has a Frameworks build phase
+    ensureFrameworksBuildPhase(xcodeProject, targetUuid);
+    
+    // Create or get the file reference for WireGuardKit
+    const frameworkName = "WireGuardKit.framework";
+    
+    // Check if it already exists in this target
+    if (hasFramework(xcodeProject, targetUuid, frameworkName)) {
+      console.log(`WireGuardKit already linked to target ${targetUuid}`);
+      return;
+    }
+    
+    // Find the build phase UUID for linking frameworks
+    const buildPhaseUuid = getBuildPhaseUuid(xcodeProject, targetUuid, 'PBXFrameworksBuildPhase');
+    if (!buildPhaseUuid) {
+      throw new Error(`Could not find frameworks build phase for target: ${targetUuid}`);
+    }
+    
+    // Create or get file reference
+    let fileRef: string | undefined;
+    const fileReferences = xcodeProject.hash.project.objects.PBXFileReference;
+    
+    // Look for existing file reference
+    for (const ref in fileReferences) {
+      if (ref.includes('_comment')) continue;
+      const fileReference = fileReferences[ref];
+      if (fileReference.name === frameworkName || fileReference.path?.includes(frameworkName)) {
+        fileRef = ref;
+        break;
+      }
+    }
+    
+    // Create new file reference if needed
+    if (!fileRef) {
+      fileRef = xcodeProject.generateUuid();
+      xcodeProject.hash.project.objects.PBXFileReference[fileRef] = {
+        isa: 'PBXFileReference',
+        lastKnownFileType: 'wrapper.framework',
+        name: frameworkName,
+        path: frameworkName,
+        sourceTree: 'BUILT_PRODUCTS_DIR'  // This refers to the framework built by Xcode
+      };
+      xcodeProject.hash.project.objects.PBXFileReference[`${fileRef}_comment`] = frameworkName;
+    }
+    
+    // Create build file entry
+    const buildFileUuid = xcodeProject.generateUuid();
+    
+    xcodeProject.hash.project.objects.PBXBuildFile[buildFileUuid] = {
+      isa: 'PBXBuildFile',
+      fileRef: fileRef
+    };
+    xcodeProject.hash.project.objects.PBXBuildFile[`${buildFileUuid}_comment`] = `${frameworkName} in Frameworks`;
+    
+    // Add to build phase
+    xcodeProject.hash.project.objects.PBXFrameworksBuildPhase[buildPhaseUuid].files.push({
+      value: buildFileUuid,
+      comment: `${frameworkName} in Frameworks`
+    });
+    
+    console.log(`Successfully added WireGuardKit to target ${targetUuid}`);
+  } catch (error) {
+    console.warn(`Failed to add WireGuardKit to target: ${error}`);
   }
 }
 
@@ -430,5 +689,4 @@ function createInfoPlistContent(bundleId: string): string {
 </plist>`;
 }
 
-export { default as withWireGuardGoBridge } from './ios/withWireGuardGoBridge';
 export default withWireGuardNetworkExtension;
