@@ -29,7 +29,12 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "../app.plugin.js"
+      [
+        "../app.plugin.js",
+        {
+          "developmentTeam": "JS5Q2ZZA39" // Replace with your Apple Developer Team ID or omit to inherit from main target
+        }
+      ]
     ],
     "extra": {
       "eas": {
