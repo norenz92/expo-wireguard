@@ -145,9 +145,10 @@ public class ExpoWireguardModule: Module {
 
   // Get the WireGuard version
   private func getWgVersion() -> String {
-    // This function comes from the WireGuard framework
-    // through the bridging header
-    return String(cString: wgVersion())
+    // Since the main target doesn't have access to wg-go headers,
+    // we return the version of our expo-wireguard module
+    // The actual WireGuard-go version is available in the NetworkExtension target
+    return "expo-wireguard-1.0.0"
   }
 
   // Clean up when module is destroyed
