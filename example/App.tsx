@@ -18,17 +18,27 @@ Endpoint = premiusa1.vpnjantit.com:1024`);
 
   // Get the WireGuard version on component mount
   useEffect(() => {
+    console.log('📱 [App] Getting WireGuard version...');
     WireGuard.Version()
-      .then((v) => setVersion(v))
-      .catch((error) => addEventLog(`Error getting version: ${error.message}`));
+      .then((v) => {
+        console.log('📱 [App] Version received:', v);
+        setVersion(v);
+        addEventLog(`Version: ${v}`);
+      })
+      .catch((error) => {
+        console.log('📱 [App] Version error:', error);
+        addEventLog(`Error getting version: ${error.message}`);
+      });
 
     // Check the initial connection status
+    console.log('📱 [App] Checking initial status...');
     checkStatus();
 
     // Set up event listeners
     const systemEventListener = DeviceEventEmitter.addListener(
       WireGuard.EV_TYPE_SYSTEM,
       (event) => {
+        console.log('📱 [App] System event:', event);
         if (event === WireGuard.EV_STARTED_BY_SYSTEM) {
           addEventLog('VPN service started by system, connecting...');
           // You might want to automatically connect here
@@ -39,6 +49,7 @@ Endpoint = premiusa1.vpnjantit.com:1024`);
     const exceptionEventListener = DeviceEventEmitter.addListener(
       WireGuard.EV_TYPE_EXCEPTION,
       (error) => {
+        console.log('📱 [App] Exception event:', error);
         addEventLog(`Error: ${error.message || error}`);
       }
     );
@@ -46,6 +57,7 @@ Endpoint = premiusa1.vpnjantit.com:1024`);
     const regularEventListener = DeviceEventEmitter.addListener(
       WireGuard.EV_TYPE_REGULAR,
       (event) => {
+        console.log('📱 [App] Regular event:', event);
         if (event.event === WireGuard.EV_STARTED) {
           addEventLog('VPN Connected');
           setStatus(true);
@@ -67,17 +79,21 @@ Endpoint = premiusa1.vpnjantit.com:1024`);
   // Check VPN connection status
   const checkStatus = async () => {
     try {
+      console.log('📱 [App] Calling Status()...');
       const isConnected = await WireGuard.Status();
+      console.log('📱 [App] Status result:', isConnected);
       setStatus(isConnected);
       addEventLog(`Connection status: ${isConnected ? 'Connected' : 'Disconnected'}`);
     } catch (error) {
-      addEventLog(`Error checking status: ${error.message}`);
+      console.log('📱 [App] Status error:', error);
+      addEventLog(`Error checking status: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
   // Connect to WireGuard VPN
   const connectVPN = async () => {
     try {
+      console.log('📱 [App] Starting connection...', { sessionName, configLength: config.length });
       addEventLog('Connecting to VPN...');
 
       // Create notification config for Android
@@ -87,19 +103,65 @@ Endpoint = premiusa1.vpnjantit.com:1024`);
         text: `Connected to ${sessionName}`
       } : undefined;
 
+      console.log('📱 [App] Calling Connect()...');
       await WireGuard.Connect(config, sessionName, notif);
+      console.log('📱 [App] Connect() completed successfully');
+      addEventLog('Connect command sent, waiting for status update...');
     } catch (error) {
-      addEventLog(`Error connecting: ${error.message}`);
+      console.log('📱 [App] Connect error:', error);
+      addEventLog(`Error connecting: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
   // Disconnect from WireGuard VPN
   const disconnectVPN = async () => {
     try {
+      console.log('📱 [App] Starting disconnection...');
       addEventLog('Disconnecting from VPN...');
       await WireGuard.Disconnect();
+      console.log('📱 [App] Disconnect() completed successfully');
+      addEventLog('Disconnect command sent, waiting for status update...');
     } catch (error) {
-      addEventLog(`Error disconnecting: ${error.message}`);
+      console.log('📱 [App] Disconnect error:', error);
+      addEventLog(`Error disconnecting: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  };
+
+  // Test network connectivity to verify VPN is working
+  const testConnectivity = async () => {
+    try {
+      addEventLog('🔗 Testing network connectivity...');
+      console.log('📱 [App] Testing network connectivity...');
+      
+      // Test multiple endpoints to verify VPN routing
+      const testUrls = [
+        'https://api.ipify.org?format=json', // Gets current IP
+        'https://httpbin.org/ip', // Alternative IP checker
+      ];
+      
+      for (const url of testUrls) {
+        try {
+          console.log(`📱 [App] Testing: ${url}`);
+          const response = await fetch(url, { method: 'GET' });
+          
+          if (response.ok) {
+            const data = await response.text();
+            console.log(`📱 [App] Response from ${url}:`, data);
+            addEventLog(`✅ ${url}: ${data.substring(0, 100)}`);
+          } else {
+            console.log(`📱 [App] HTTP ${response.status} from ${url}`);
+            addEventLog(`❌ ${url}: HTTP ${response.status}`);
+          }
+        } catch (urlError) {
+          console.log(`📱 [App] Error testing ${url}:`, urlError);
+          addEventLog(`❌ ${url}: ${urlError instanceof Error ? urlError.message : String(urlError)}`);
+        }
+      }
+      
+      addEventLog('🔗 Network connectivity test completed');
+    } catch (error) {
+      console.log('📱 [App] Connectivity test error:', error);
+      addEventLog(`❌ Connectivity test failed: ${error instanceof Error ? error.message : String(error)}`);
     }
   };
 
@@ -157,6 +219,13 @@ Endpoint = premiusa1.vpnjantit.com:1024`);
           color="#F44336"
         />
       </View>
+
+      <Button
+        title="Test Connectivity"
+        onPress={testConnectivity}
+        disabled={!status}
+        color="#2196F3"
+      />
 
       <Text style={styles.label}>Event Log:</Text>
       <ScrollView style={styles.logContainer}>

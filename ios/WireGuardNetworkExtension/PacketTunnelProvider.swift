@@ -15,7 +15,8 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         
         guard let configData = tunnelProviderProtocol.providerConfiguration?["config"] as? Data else {
-            wg_log(.error, message: "No configuration found")
+            wg_log(.error, message: "No configuration found in provider configuration")
+            wg_log(.info, message: "Available keys: \(tunnelProviderProtocol.providerConfiguration?.keys.joined(separator: ", ") ?? "none")")
             completionHandler(NSError(domain: "WireGuardNetworkExtension", code: 2, userInfo: [NSLocalizedDescriptionKey: "No configuration found"]))
             return
         }
@@ -27,6 +28,7 @@ class PacketTunnelProvider: NEPacketTunnelProvider {
         }
         
         wg_log(.info, message: "WireGuard configuration loaded successfully")
+        wg_log(.info, message: "Config preview: \(String(configString.prefix(100)))")
         
         // For now, just call completion handler with nil to indicate successful startup
         // TODO: Implement actual WireGuard tunnel startup when wg-go integration is complete
