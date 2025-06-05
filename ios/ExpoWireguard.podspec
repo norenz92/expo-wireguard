@@ -22,8 +22,7 @@ Pod::Spec.new do |s|
 
   # Swift/Objective-C compatibility
   s.pod_target_xcconfig = { 
-    'DEFINES_MODULE' => 'YES',
-    'FRAMEWORK_SEARCH_PATHS' => '$(inherited) $(SRCROOT)/../Frameworks'
+    'DEFINES_MODULE' => 'YES'
   }
   
   s.source_files = 'src/**/*.{h,m,mm,swift,hpp,cpp}'

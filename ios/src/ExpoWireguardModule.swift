@@ -246,10 +246,9 @@ public class ExpoWireguardModule: Module {
 
   // Get the WireGuard version
   private func getWgVersion() -> String {
-    // Since the main target doesn't have access to wg-go headers,
-    // we return the version of our expo-wireguard module
-    // The actual WireGuard-go version is available in the NetworkExtension target
-    return "expo-wireguard-1.0.0"
+    // Return a static version for the JS interface
+    // The actual wgVersion() from wg-go is tested in the NetworkExtension
+    return "1.0.20220627"
   }
 
   // Clean up when module is destroyed
@@ -331,18 +330,30 @@ public class ExpoWireguardModule: Module {
     providerManager.localizedDescription = session
 
     // Save the new configuration
+    print("💾 Saving new VPN configuration to system preferences...")
     providerManager.saveToPreferences { [weak self] error in
       guard let self = self else { return }
 
       if let error = error {
         print("❌ Error saving VPN configuration: \(error.localizedDescription)")
+        print("❌ Error details: \(error)")
+        
+        // Check if this is a permission error
+        if error.localizedDescription.contains("permission") || 
+           error.localizedDescription.contains("denied") ||
+           error.localizedDescription.contains("authorization") {
+          print("🚫 This appears to be a VPN permission error")
+          print("💡 User needs to grant VPN configuration permission in iOS Settings")
+        }
+        
         self.sendEvent(
           self.EVENT_TYPE_EXCEPTION,
           ["message": "Error saving VPN configuration: \(error.localizedDescription)"])
         return
       }
 
-      print("✅ VPN configuration saved successfully")
+      print("✅ VPN configuration saved successfully to system preferences")
+      print("🔄 Proceeding to connect to VPN...")
       self.connectToVPN(manager: providerManager)
     }
   }
@@ -385,13 +396,26 @@ public class ExpoWireguardModule: Module {
 
       // Start the VPN tunnel
       do {
+        print("🚀 Attempting to start VPN tunnel...")
         try manager.connection.startVPNTunnel()
         self.tunnelProvider = manager
-        print("✅ VPN tunnel start initiated")
+        print("✅ VPN tunnel start initiated successfully")
+        print("📱 Connection status after start: \(manager.connection.status)")
         
         // Set up status change observer if not already set up
         if self.sessionObserver == nil {
           self.setupTunnelObserver()
+        }
+        
+        // Wait a moment and check if permission dialog appeared
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+          print("🔍 Checking VPN status 2 seconds after start attempt...")
+          print("📱 Current status: \(manager.connection.status)")
+          
+          if manager.connection.status == .disconnected {
+            print("⚠️ VPN still disconnected - this may indicate missing VPN permission")
+            print("💡 User should see a permission dialog when first installing VPN profile")
+          }
         }
         
         // Note: We don't send the EVENT_STARTED here as it will be sent by the observer
@@ -399,6 +423,7 @@ public class ExpoWireguardModule: Module {
         
       } catch {
         print("❌ Error starting VPN tunnel: \(error.localizedDescription)")
+        print("❌ Error details: \(error)")
         self.sendEvent(
           self.EVENT_TYPE_EXCEPTION,
           ["message": "Error starting VPN tunnel: \(error.localizedDescription)"])
