@@ -25,8 +25,6 @@ DerivedData
 *.ipa
 *.xcuserstate
 project.xcworkspace
-example/ios/
-example/android/
 
 # Android/IJ
 #
@@ -57,3 +55,6 @@ yarn-error.log
 
 # Expo
 .expo/*
+
+/example/ios
+/example/android

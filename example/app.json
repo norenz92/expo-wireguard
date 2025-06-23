@@ -14,8 +14,7 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "expo.modules.wireguard.example",
-      "appleTeamId": "JS5Q2ZZA39"
+      "bundleIdentifier": "expo.modules.wireguard.example"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,33 +26,6 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    },
-    "plugins": [
-      [
-        "../app.plugin.js",
-        {
-          "developmentTeam": "JS5Q2ZZA39" // Replace with your Apple Developer Team ID or omit to inherit from main target
-        }
-      ]
-    ],
-    "extra": {
-      "eas": {
-        "build": {
-          "experimental": {
-            "ios": {
-              "appExtensions": [
-                {
-                  "targetName": "myappextension",
-                  "bundleIdentifier": "com.myapp.extension",
-                  "entitlements": {
-                    "com.apple.example": "entitlement value"
-                  }
-                }
-              ]
-            }
-          }
-        }
-      }
     }
   }
 }

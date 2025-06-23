@@ -19,18 +19,11 @@ Pod::Spec.new do |s|
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'
-  
+
   # Swift/Objective-C compatibility
-  s.pod_target_xcconfig = { 
-    'DEFINES_MODULE' => 'YES'
+  s.pod_target_xcconfig = {
+    'DEFINES_MODULE' => 'YES',
   }
-  
-  # Add WireGuard as Swift Package Manager dependency without user interaction
-  spm_dependency(s,
-    url: 'https://git.zx2c4.com/wireguard-apple',
-    requirement: {kind: 'exactVersion', version: '1.0.15-26'},
-    products: ['WireGuardKit']
-  )
-  
+
   s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
 end

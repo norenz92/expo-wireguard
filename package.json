@@ -13,8 +13,7 @@
     "prepublishOnly": "expo-module prepublishOnly",
     "expo-module": "expo-module",
     "open:ios": "xed example/ios",
-    "open:android": "open -a \"Android Studio\" example/android",
-    "build:plugin": "npm run build plugin"
+    "open:android": "open -a \"Android Studio\" example/android"
   },
   "keywords": [
     "react-native",
@@ -29,13 +28,11 @@
   "author": "Adam Norén <norenz@hotmail.com> (https://github.com/norenz92)",
   "license": "MIT",
   "homepage": "https://github.com/norenz92/expo-wireguard#readme",
-  "dependencies": {
-    "expo-modules-core": "^2.3.13"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/react": "~19.0.0",
-    "expo": "~53.0.0",
     "expo-module-scripts": "^4.1.6",
+    "expo": "~53.0.0",
     "react-native": "0.79.1"
   },
   "peerDependencies": {
