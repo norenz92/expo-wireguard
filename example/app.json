@@ -14,7 +14,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "expo.modules.wireguard.example"
+      "bundleIdentifier": "expo.modules.wireguard.example",
+      "entitlements": {
+        "com.apple.developer.networking.networkextension": true
+      },
+      "appleTeamId": "JS5Q2ZZA39"
     },
     "android": {
       "adaptiveIcon": {
@@ -27,6 +31,13 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "plugins": ["../app.plugin.js"]
+    "plugins": [
+      [
+        "../app.plugin.js",
+        {
+          "developmentTeam": "JS5Q2ZZA39"
+        }
+      ]
+    ]
   }
 }

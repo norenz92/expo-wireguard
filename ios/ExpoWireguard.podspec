@@ -25,5 +25,13 @@ Pod::Spec.new do |s|
     'DEFINES_MODULE' => 'YES',
   }
 
-  s.source_files = "**/*.{h,m,mm,swift,hpp,cpp}"
+  # Only include main module files, exclude Network Extension files
+  s.source_files = 'src/**/*.{h,m,mm,swift,hpp,cpp}'
+  s.exclude_files = "src/WireGuardNetworkExtension/**/*"
+  
+  # NOTE: wg-go.xcframework is NOT included here as it should only be linked to the Network Extension target
+  # The config plugin will add it specifically to the Network Extension target to avoid module conflicts
+  
+  # Required iOS frameworks for main app VPN management (NOT including wg-go)
+  s.frameworks = 'NetworkExtension', 'Security', 'SystemConfiguration'
 end
